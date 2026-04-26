@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import StepIndicator from "@/components/ui/StepIndicator";
 import Button from "@/components/ui/Button";
+import BudgetGauge from "@/components/BudgetGauge";
+import ProductCard from "@/components/ProductCard";
+import ReserveModal from "@/components/ReserveModal";
+import ShareButtons from "@/components/ShareButtons";
 import { useToast } from "@/contexts/toast";
 import { usePdfExport } from "@/hooks/usePdfExport";
-import type { RecommendationResult, AccessoryRecommendation } from "@/types/recommendation";
+import type { RecommendationResult, AccessoryRecommendation, CatalogItem } from "@/types/recommendation";
 
 const STEPS = ["Photo", "Meuble", "Style", "Résultats"];
 
@@ -44,7 +49,7 @@ function formatFcfa(amount: number) {
   return new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
 }
 
-function AccessoryCard({ acc }: { acc: AccessoryRecommendation }) {
+function AccessoryCard({ acc, onReserve }: { acc: AccessoryRecommendation; onReserve: (item: CatalogItem) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -100,19 +105,9 @@ function AccessoryCard({ acc }: { acc: AccessoryRecommendation }) {
               <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
                 Suggestions produits
               </p>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {acc.catalogItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between bg-stone-50 rounded-xl px-3 py-2.5">
-                    <div>
-                      <p className="text-sm font-medium text-stone-800">{item.name}</p>
-                      {item.description && (
-                        <p className="text-xs text-stone-400 mt-0.5">{item.description}</p>
-                      )}
-                    </div>
-                    <span className="text-sm font-semibold text-stone-700 whitespace-nowrap ml-2">
-                      {formatFcfa(item.priceFcfa)}
-                    </span>
-                  </div>
+                  <ProductCard key={item.id} item={item} onReserve={onReserve} />
                 ))}
               </div>
             </div>
@@ -191,7 +186,23 @@ export default function ResultsPage() {
   const [result, setResult] = useState<RecommendationResult | null>(null);
   const [roomImage, setRoomImage] = useState<string | null>(null);
   const [composedImage, setComposedImage] = useState<string | null>(null);
+  const [reserveItem, setReserveItem] = useState<CatalogItem | null>(null);
+  const [userCity, setUserCity] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/profile").then((r) => r.json()).then((p) => setUserCity(p.city ?? null)).catch(() => {});
+  }, []);
   const [composing, setComposing] = useState(false);
+
+  // Contenus partageables
+  const [shareGenerating, setShareGenerating] = useState(false);
+  const [shareSquare, setShareSquare] = useState<string | null>(null);
+  const [shareCarousel, setShareCarousel] = useState<string[]>([]);
+  const [shareVideoId, setShareVideoId] = useState<string | null>(null);
+  const [shareVideoUrl, setShareVideoUrl] = useState<string | null>(null);
+  const [shareVideoPolling, setShareVideoPolling] = useState(false);
+  const [sharePostId, setSharePostId] = useState<string | null>(null);
+  const [shareCaption, setShareCaption] = useState<string>("");
 
   // Tapis
   const [rugImage, setRugImage] = useState<string | null>(null);
@@ -299,6 +310,83 @@ export default function ResultsPage() {
   const handleLight = (shape: string, color: string) => {
     setActiveLight(shape + color);
     callImageApi("/api/image/lighting", { shape, color }, setLightLoading, setLightImage, "luminaire");
+  };
+
+  const handleGenerateShareContent = async () => {
+    if (!result) return;
+    const beforeDataUrl = sessionStorage.getItem("roomImage");
+    const afterDataUrl = composedImage ?? sessionStorage.getItem("roomImage");
+    if (!beforeDataUrl) { toast("Photo de pièce manquante.", "error"); return; }
+
+    setShareGenerating(true);
+    try {
+      // Collecter tous les produits catalogue
+      const catalogItems = result.accessories.flatMap((a) => a.catalogItems).slice(0, 4);
+
+      const res = await fetch("/api/share/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          beforeDataUrl,
+          afterDataUrl,
+          style: result.input.style,
+          budgetFcfa: result.input.budgetFcfa,
+          catalogItems,
+        }),
+      });
+      const data = await res.json();
+      if (data.squareImageUrl) setShareSquare(data.squareImageUrl);
+      if (data.carouselUrls) setShareCarousel(data.carouselUrls);
+      if (data.shotstackRenderId) {
+        setShareVideoId(data.shotstackRenderId);
+        pollVideoStatus(data.shotstackRenderId);
+      }
+
+      // Créer le post partageable public
+      if (data.squareImageUrl) {
+        const postRes = await fetch("/api/share/posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            squareImageUrl: data.squareImageUrl,
+            carouselUrls: data.carouselUrls ?? [],
+            style: result.input.style,
+            budgetFcfa: result.input.budgetFcfa,
+            budgetLevel: result.budgetLevel,
+          }),
+        });
+        const postData = await postRes.json();
+        if (postData.id) { setSharePostId(postData.id); setShareCaption(postData.caption ?? ""); }
+      }
+
+      toast("Contenus générés !", "success");
+    } catch {
+      toast("Erreur lors de la génération des contenus.", "error");
+    } finally {
+      setShareGenerating(false);
+    }
+  };
+
+  const pollVideoStatus = (renderId: string) => {
+    setShareVideoPolling(true);
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/share/status/${renderId}`);
+        const data = await res.json();
+        if (data.status === "done" && data.url) {
+          setShareVideoUrl(data.url);
+          setShareVideoPolling(false);
+          clearInterval(interval);
+          toast("Vidéo prête !", "success");
+        } else if (data.status === "failed") {
+          setShareVideoPolling(false);
+          clearInterval(interval);
+          toast("Erreur vidéo Shotstack.", "error");
+        }
+      } catch { clearInterval(interval); setShareVideoPolling(false); }
+    }, 5000);
+    // Arrêter après 2 min max
+    setTimeout(() => { clearInterval(interval); setShareVideoPolling(false); }, 120_000);
   };
 
   const handleRug = async (color: string) => {
@@ -596,13 +684,124 @@ export default function ResultsPage() {
         )}
       </section>
 
+      {/* Prompt ville si non renseignée */}
+      {!userCity && (
+        <div className="mb-4 bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-500 text-lg mt-0.5">🌍</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Définis ta ville pour voir les produits locaux</p>
+            <p className="text-xs text-amber-600 mt-0.5">Abidjan, Dakar, Douala… les artisans et boutiques près de chez toi.</p>
+          </div>
+          <Link href="/profile/settings" className="text-xs text-amber-700 font-semibold underline whitespace-nowrap mt-0.5">
+            Définir →
+          </Link>
+        </div>
+      )}
+
+      {/* Jauge budget */}
+      <div className="mb-5">
+        <BudgetGauge totalFcfa={result.totalEstimateFcfa} budgetFcfa={result.input.budgetFcfa} />
+      </div>
+
       <div className="flex flex-col gap-3">
         {result.accessories.map((acc) => (
-          <AccessoryCard key={acc.type} acc={acc} />
+          <AccessoryCard key={acc.type} acc={acc} onReserve={setReserveItem} />
         ))}
       </div>
 
-      <div className="mt-8 flex flex-col gap-3">
+      {/* ── Contenus partageables ── */}
+      <section className="mt-6 mb-2">
+        <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">
+          📲 Contenus partageables
+        </h2>
+
+        {!shareSquare ? (
+          <button
+            onClick={handleGenerateShareContent}
+            disabled={shareGenerating}
+            className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-stone-300 rounded-2xl py-4 text-sm font-medium text-stone-600 hover:border-stone-400 hover:bg-stone-50 transition-colors disabled:opacity-50"
+          >
+            {shareGenerating ? "⏳ Génération en cours…" : "✨ Générer image + carrousel + vidéo"}
+          </button>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {/* Image carrée */}
+            <div>
+              <p className="text-xs text-stone-500 mb-2 font-medium">📷 Image carrée 1080×1080 (Instagram / Facebook)</p>
+              <div className="rounded-xl overflow-hidden border border-stone-100 shadow-sm relative">
+                <img src={shareSquare} alt="Contenu partageable" loading="lazy" className="w-full" />
+                <a
+                  href={shareSquare}
+                  download="decoapp-share.jpg"
+                  className="absolute top-2 right-2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-black/80"
+                >
+                  ⬇ Télécharger
+                </a>
+              </div>
+            </div>
+
+            {/* Carrousel */}
+            {shareCarousel.length > 0 && (
+              <div>
+                <p className="text-xs text-stone-500 mb-2 font-medium">🎠 Carrousel {shareCarousel.length} slides</p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {shareCarousel.map((url, i) => (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`Slide ${i + 1}`}
+                      loading="lazy"
+                      className="w-28 h-28 object-cover rounded-xl border border-stone-100 flex-shrink-0"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Vidéo Shotstack */}
+            <div>
+              <p className="text-xs text-stone-500 mb-2 font-medium">🎬 Vidéo before/after (TikTok / Reels)</p>
+              {shareVideoUrl ? (
+                <div className="rounded-xl overflow-hidden border border-stone-100 shadow-sm">
+                  <video src={shareVideoUrl} controls className="w-full max-h-56" />
+                  <a href={shareVideoUrl} download target="_blank" rel="noreferrer"
+                    className="block text-center text-xs text-amber-700 font-medium py-2 bg-amber-50 hover:bg-amber-100">
+                    ⬇ Télécharger la vidéo
+                  </a>
+                </div>
+              ) : shareVideoPolling ? (
+                <div className="rounded-xl border border-stone-100 py-6 flex flex-col items-center gap-2 bg-stone-50">
+                  <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs text-stone-500">Vidéo en cours de rendu (Shotstack)…</p>
+                </div>
+              ) : shareVideoId ? (
+                <p className="text-xs text-stone-400">ID rendu : {shareVideoId}</p>
+              ) : (
+                <p className="text-xs text-stone-400 italic">Clé Shotstack requise pour la vidéo.</p>
+              )}
+            </div>
+          {/* Boutons de partage — apparaissent dès qu'un post est créé */}
+          {sharePostId && (
+            <ShareButtons
+              shareUrl={`/share/${sharePostId}`}
+              caption={shareCaption}
+              imageUrl={shareSquare ?? undefined}
+              videoUrl={shareVideoUrl ?? undefined}
+              onShare={(platform) => {
+                // Tracking simple côté client
+                fetch("/api/analytics/share", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ platform, postId: sharePostId }),
+                }).catch(() => {});
+              }}
+            />
+          )}
+          </div>
+        )}
+      </section>
+
+      <div className="mt-6 flex flex-col gap-3">
         <Button
           fullWidth
           disabled={exporting}
@@ -617,10 +816,41 @@ export default function ResultsPage() {
         >
           {exporting ? "Génération PDF…" : "⬇ Exporter en PDF"}
         </Button>
+        {shareSquare && (
+          <Button
+            variant="secondary"
+            fullWidth
+            onClick={async () => {
+              const caption = `${result.input.style.replace(/_/g, " ")} · ${new Intl.NumberFormat("fr-FR").format(result.input.budgetFcfa)} FCFA ✨ #DecoApp`;
+              const res = await fetch("/api/community/posts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  imageUrl: shareSquare,
+                  style: result.input.style,
+                  budgetFcfa: result.input.budgetFcfa,
+                  budgetLevel: result.budgetLevel,
+                  caption,
+                }),
+              });
+              if (res.ok) { toast("Publié dans la communauté ! 🏡", "success"); router.push("/community"); }
+              else if (res.status === 401) toast("Connecte-toi pour publier.", "info");
+            }}
+          >
+            🏡 Publier dans la communauté
+          </Button>
+        )}
+        <Button variant="secondary" fullWidth onClick={() => router.push("/plan")}>
+          🗓️ Mon plan déco mensuel
+        </Button>
         <Button variant="secondary" fullWidth onClick={() => router.push("/")}>
           ← Recommencer
         </Button>
       </div>
+
+      {reserveItem && (
+        <ReserveModal item={reserveItem} onClose={() => setReserveItem(null)} />
+      )}
     </main>
   );
 }

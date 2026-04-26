@@ -16,12 +16,30 @@ model User {
   image         String?
   password      String?
   role          String    @default("USER") // USER | ADMIN
+  city          String?
+  country       String?
+  referralCode  String?   @unique
+  referredBy    String?   // userId du parrain
+  aiCredits     Int       @default(3)
   accounts      Account[]
   sessions      Session[]
   rooms         Room[]
   simulations   Simulation[]
+  purchasePlans PurchasePlan[]
+  referralsSent Referral[] @relation("ReferralFrom")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// ─── Parrainage ───────────────────────────────────────────────────────────────
+
+model Referral {
+  id          String   @id @default(cuid())
+  referrerId  String
+  refereeId   String   @unique  // un filleul ne peut être parrainé qu'une fois
+  creditAwarded Boolean @default(false)
+  createdAt   DateTime @default(now())
+  referrer    User     @relation("ReferralFrom", fields: [referrerId], references: [id], onDelete: Cascade)
 }
 
 model Account {
@@ -138,9 +156,18 @@ model AccessoryCatalog {
   budgetLevel String
   imageUrl    String?
   description String?
-  available   Boolean  @default(true)
-  inStock     Boolean  @default(true)
-  externalUrl String?
+  available               Boolean  @default(true)
+  inStock                 Boolean  @default(true)
+  externalUrl             String?
+  // Localisation Afrique francophone
+  country                 String?
+  city                    String?
+  vendorName              String?
+  vendorType              String?  // boutique | artisan | marketplace
+  vendorContactWhatsapp   String?
+  isHandmade              Boolean  @default(false)
+  localMaterial           String?
+  tropicalFriendly        Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -176,4 +203,116 @@ model Simulation {
   totalFcfa      Int
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
+}
+
+// ─── Posts partageables publics ───────────────────────────────────────────────
+
+model ShareablePost {
+  id             String   @id @default(cuid())
+  userId         String?
+  squareImageUrl String
+  carouselUrls   String[]
+  videoUrl       String?
+  style          String
+  budgetFcfa     Int
+  budgetLevel    String
+  caption        String
+  shareCount     Int      @default(0)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+}
+
+// ─── Plan d'achat progressif ──────────────────────────────────────────────────
+
+model PurchasePlan {
+  id               String   @id @default(cuid())
+  userId           String
+  monthlyBudgetFcfa Int
+  months           Json     // PurchaseMonth[]
+  totalFcfa        Int
+  durationMonths   Int
+  reminderEnabled  Boolean  @default(false)
+  startMonth       Int      // 1–12
+  startYear        Int
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+}
+
+// ─── Communauté ───────────────────────────────────────────────────────────────
+
+model CommunityPost {
+  id          String        @id @default(cuid())
+  userId      String
+  imageUrl    String
+  beforeUrl   String?
+  style       String
+  budgetFcfa  Int
+  budgetLevel String
+  caption     String
+  city        String?
+  country     String?
+  isPublic    Boolean       @default(true)
+  reported    Boolean       @default(false)
+  likesCount  Int           @default(0)
+  likes       PostLike[]
+  comments    PostComment[]
+  createdAt   DateTime      @default(now())
+}
+
+model PostLike {
+  id        String        @id @default(cuid())
+  postId    String
+  userId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([postId, userId])
+}
+
+model PostComment {
+  id        String        @id @default(cuid())
+  postId    String
+  userId    String
+  text      String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+}
+
+// ─── Défi mensuel ─────────────────────────────────────────────────────────────
+
+model MonthlyChallenge {
+  id          String                @id @default(cuid())
+  title       String
+  description String
+  theme       String
+  hashtag     String
+  budgetFcfa  Int?
+  style       String?
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean               @default(true)
+  submissions ChallengeSubmission[]
+  createdAt   DateTime              @default(now())
+}
+
+model ChallengeSubmission {
+  id          String           @id @default(cuid())
+  challengeId String
+  userId      String
+  imageUrl    String
+  caption     String?
+  votes       Int              @default(0)
+  challenge   MonthlyChallenge @relation(fields: [challengeId], references: [id])
+  createdAt   DateTime         @default(now())
+}
+
+// ─── Groupes WhatsApp par ville ───────────────────────────────────────────────
+
+model WhatsAppGroup {
+  id        String   @id @default(cuid())
+  city      String
+  country   String
+  inviteUrl String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 }

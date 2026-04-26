@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { redeemReferralCode } from "@/lib/referral";
 
 export async function POST(req: Request) {
-  const { name, email, password } = await req.json();
+  const { name, email, password, referralCode } = await req.json();
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email et mot de passe requis" }, { status: 422 });
@@ -22,6 +23,11 @@ export async function POST(req: Request) {
     data: { name: name ?? null, email, password: hashed, role: "USER" },
     select: { id: true, email: true, name: true },
   });
+
+  // Traiter le code de parrainage si fourni
+  if (referralCode && typeof referralCode === "string") {
+    await redeemReferralCode(referralCode, user.id).catch(() => {});
+  }
 
   return NextResponse.json(user, { status: 201 });
 }

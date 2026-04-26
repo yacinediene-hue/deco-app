@@ -8,13 +8,17 @@ import type { Style } from "@/types/recommendation";
 
 const STEPS = ["Photo", "Meuble", "Style", "Résultats"];
 
-const STYLES: { id: Style; label: string; emoji: string; desc: string }[] = [
-  { id: "moderne",    label: "Moderne",            emoji: "◼", desc: "Formes épurées, métal noir, tons neutres" },
-  { id: "chic",       label: "Chic",               emoji: "✦", desc: "Laiton, velours, marbre, tons profonds" },
-  { id: "minimaliste",label: "Minimaliste",         emoji: "—", desc: "Peu d'objets, beige, blanc, bois clair" },
-  { id: "africain",   label: "Africain contemporain",emoji: "◈", desc: "Fibres naturelles, bois, terracotta" },
-  { id: "boheme",     label: "Bohème",             emoji: "✿", desc: "Rotin, jute, lin, plantes, ethnique" },
-  { id: "luxe",       label: "Luxe discret",        emoji: "◇", desc: "Crème, doré doux, matières nobles" },
+const STYLES: { id: Style; label: string; emoji: string; desc: string; group?: string }[] = [
+  { id: "moderne",          label: "Moderne",               emoji: "◼", desc: "Formes épurées, métal noir" },
+  { id: "chic",             label: "Chic",                  emoji: "✦", desc: "Laiton, velours, marbre" },
+  { id: "minimaliste",      label: "Minimaliste",            emoji: "—", desc: "Beige, blanc, bois clair" },
+  { id: "boheme",           label: "Bohème",                emoji: "✿", desc: "Rotin, jute, lin, plantes" },
+  { id: "luxe",             label: "Luxe discret",           emoji: "◇", desc: "Crème, doré doux" },
+  // Afrique contemporaine
+  { id: "sahel_chic",       label: "Sahel chic",             emoji: "🏜️", desc: "Sable, cuivre, bois clair", group: "africa" },
+  { id: "wax_moderne",      label: "Wax moderne",            emoji: "🎨", desc: "Motifs wax, tons profonds", group: "africa" },
+  { id: "bantou_minimaliste",label: "Bantou minimaliste",    emoji: "🪵", desc: "Ébène, terre cuite, lignes pures", group: "africa" },
+  { id: "bogolan_urbain",   label: "Bogolan urbain",         emoji: "🧶", desc: "Noir, ocre, cotons africains", group: "africa" },
 ];
 
 const BUDGETS = [
@@ -28,6 +32,32 @@ const BUDGET_AMOUNTS: Record<string, number> = {
   moyen: 900_000,
   eleve: 2_000_000,
 };
+
+function StyleButton({
+  s, selected, onSelect, african = false,
+}: {
+  s: { id: Style; label: string; emoji: string; desc: string };
+  selected: boolean;
+  onSelect: (id: Style) => void;
+  african?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(s.id)}
+      className={`text-left p-4 rounded-xl border-2 transition-all
+        ${selected
+          ? african ? "border-amber-700 bg-amber-700 text-white" : "border-stone-900 bg-stone-900 text-white"
+          : african ? "border-amber-100 bg-amber-50 hover:border-amber-300" : "border-stone-200 bg-white hover:border-stone-300"
+        }`}
+    >
+      <div className="text-lg mb-1">{s.emoji}</div>
+      <div className="font-semibold text-sm">{s.label}</div>
+      <div className={`text-[11px] mt-0.5 leading-tight ${selected ? "text-stone-300" : african ? "text-amber-600" : "text-stone-400"}`}>
+        {s.desc}
+      </div>
+    </button>
+  );
+}
 
 function StylePageContent() {
   const router = useRouter();
@@ -46,12 +76,23 @@ function StylePageContent() {
     const dominantColor = params.get("color") ?? "beige";
     const widthCm = params.get("width") ? parseFloat(params.get("width")!) : null;
 
+    // Récupérer ville/pays depuis le profil (silencieux)
+    let city: string | undefined;
+    let country: string | undefined;
+    try {
+      const profile = await fetch("/api/profile").then((r) => r.json());
+      city = profile.city ?? undefined;
+      country = profile.country ?? undefined;
+    } catch {}
+
     const body = {
       furnitureType,
       dominantColor,
       room: "salon",
       style,
       budgetFcfa: BUDGET_AMOUNTS[budget],
+      city,
+      country,
     };
 
     try {
@@ -97,21 +138,25 @@ function StylePageContent() {
       {/* Styles */}
       <section className="mb-7">
         <h2 className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Style</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {STYLES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setStyle(s.id)}
-              className={`text-left p-4 rounded-xl border-2 transition-all
-                ${style === s.id ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white hover:border-stone-300"}`}
-            >
-              <div className="text-lg mb-1">{s.emoji}</div>
-              <div className="font-semibold text-sm">{s.label}</div>
-              <div className={`text-[11px] mt-0.5 leading-tight ${style === s.id ? "text-stone-300" : "text-stone-400"}`}>
-                {s.desc}
-              </div>
-            </button>
+
+        {/* Styles universels */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {STYLES.filter((s) => !s.group).map((s) => (
+            <StyleButton key={s.id} s={s} selected={style === s.id} onSelect={setStyle} />
           ))}
+        </div>
+
+        {/* Afrique contemporaine */}
+        <div className="mb-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">🌍 Afrique contemporaine</span>
+            <div className="flex-1 h-px bg-amber-100" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {STYLES.filter((s) => s.group === "africa").map((s) => (
+              <StyleButton key={s.id} s={s} selected={style === s.id} onSelect={setStyle} african />
+            ))}
+          </div>
         </div>
       </section>
 

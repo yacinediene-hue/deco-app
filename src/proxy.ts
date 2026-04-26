@@ -6,6 +6,10 @@ export default auth((req) => {
 
   const protectedPaths = ["/results", "/history"];
   const adminPaths = ["/admin"];
+  const publicPaths = ["/share", "/plan"]; // accessibles sans auth
+
+  const isPublic = publicPaths.some((p) => nextUrl.pathname.startsWith(p));
+  if (isPublic) return; // pas de redirection
 
   const isProtected = protectedPaths.some((p) => nextUrl.pathname.startsWith(p));
   const isAdmin = adminPaths.some((p) => nextUrl.pathname.startsWith(p));

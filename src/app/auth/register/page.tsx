@@ -1,18 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const ref = params.get("ref");
+    if (ref) setReferralCode(ref);
+  }, [params]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +29,7 @@ export default function RegisterPage() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, referralCode }),
     });
 
     if (!res.ok) {
@@ -83,6 +90,15 @@ export default function RegisterPage() {
             />
           </div>
 
+          {referralCode && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5">
+              <span className="text-green-600">🎁</span>
+              <p className="text-xs text-green-700 font-medium">
+                Parrainé par le code <strong>{referralCode}</strong> — tu démarres avec 3 crédits IA !
+              </p>
+            </div>
+          )}
+
           {error && (
             <p className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">{error}</p>
           )}
@@ -100,5 +116,13 @@ export default function RegisterPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   );
 }
