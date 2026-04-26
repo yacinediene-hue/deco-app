@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { PurchasePlanGenerator } from "@/lib/purchase-plan-generator";
 import type { AccessoryRecommendation } from "@/types/recommendation";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const getResend = () => new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
         `• ${i.item.name} — ${new Intl.NumberFormat("fr-FR").format(i.item.priceFcfa)} FCFA`
       ).join("<br/>") ?? "";
 
-      await resend.emails.send({
+      await getResend().emails.send({
         from: process.env.RESEND_FROM ?? "DecoApp <noreply@decoapp.co>",
         to: [session.user.email],
         subject: `🗓️ Ton plan déco sur ${plan.durationMonths} mois est prêt !`,

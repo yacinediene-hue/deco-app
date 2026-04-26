@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const getResend = () => new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   const { name, email, phone, productId, productName } = await req.json();
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     : "";
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: process.env.RESEND_FROM ?? "DecoApp <noreply@decoapp.co>",
       to: [email],
       subject: `✅ Demande de réservation — ${productLabel}`,
