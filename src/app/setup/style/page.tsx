@@ -63,6 +63,22 @@ function StylePageContent() {
       const data = await res.json();
       sessionStorage.setItem("recommendations", JSON.stringify(data));
       sessionStorage.setItem("furnitureWidthCm", widthCm?.toString() ?? "");
+
+      // Sauvegarde en DB (silencieuse — ne bloque pas la navigation si échec)
+      fetch("/api/simulations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          furnitureType: body.furnitureType,
+          dominantColor: body.dominantColor,
+          style: body.style,
+          budgetFcfa: body.budgetFcfa,
+          budgetLevel: data.budgetLevel,
+          accessories: data.accessories,
+          totalFcfa: data.totalEstimateFcfa,
+        }),
+      }).catch(() => {});
+
       router.push("/results");
     } catch {
       setLoading(false);

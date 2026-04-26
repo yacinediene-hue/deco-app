@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import StepIndicator from "@/components/ui/StepIndicator";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/contexts/toast";
+import { usePdfExport } from "@/hooks/usePdfExport";
 import type { RecommendationResult, AccessoryRecommendation } from "@/types/recommendation";
 
 const STEPS = ["Photo", "Meuble", "Style", "Résultats"];
@@ -186,6 +187,7 @@ function dataUrlToBlob(dataUrl: string, mime: string): Blob {
 export default function ResultsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { exportPdf, exporting } = usePdfExport();
   const [result, setResult] = useState<RecommendationResult | null>(null);
   const [roomImage, setRoomImage] = useState<string | null>(null);
   const [composedImage, setComposedImage] = useState<string | null>(null);
@@ -600,7 +602,21 @@ export default function ResultsPage() {
         ))}
       </div>
 
-      <div className="mt-8">
+      <div className="mt-8 flex flex-col gap-3">
+        <Button
+          fullWidth
+          disabled={exporting}
+          onClick={() => exportPdf({
+            title: `${result.input.furnitureType} ${result.input.style}`,
+            decoStyle: result.input.style,
+            budgetLevel: result.budgetLevel,
+            totalFcfa: result.totalEstimateFcfa,
+            accessories: result.accessories,
+            date: new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }),
+          })}
+        >
+          {exporting ? "Génération PDF…" : "⬇ Exporter en PDF"}
+        </Button>
         <Button variant="secondary" fullWidth onClick={() => router.push("/")}>
           ← Recommencer
         </Button>
